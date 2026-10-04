@@ -110,7 +110,7 @@ The solver draws the completed puzzle using unicode box drawing characters. This
 The solver represents puzzles on an expanded cell-edge-vertex grid. This provides room to easily enter edge and vertex mechanics. If the original puzzle has `R` rows and `C` columns, the expanded grid has `2R+1` rows and `2C+1` columns. The image below shows a 2x2 board segment. Cells are colored orange, edges are green, and vertices are purple. The `'##'` symbol means a cell is present and has no mechanics while `'..'` means empty space. 
 
 <p align="center">
-  <img src="https://github.com/user-attachments/assets/af4ba87d-e2d9-4782-bf1e-2f0b5f9dd881" alt="Visual depiction of expanded grid."/>
+  <img src="https://github.com/user-attachments/assets/f08eae19-1072-4c36-a0f2-00cc23010d86" alt="Visual depiction of expanded grid."/>
 </p>
 
 Each board mechanic is represented as a two or more character string, see the table below. 
