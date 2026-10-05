@@ -2179,7 +2179,7 @@ class PuzzleSolver():
                             for cls in self.encoding.define_same_shape(n1,n2):
                                 self.s.add_clause(cls)
 
-                            self.s.add_clause([self.region_is_empty(n1), self.region_is_empty(n2), -self.same_shape(n1,n2)])
+                            self.s.add_clause([self.encoding.region_is_empty(n1), self.encoding.region_is_empty(n2), -self.encoding.same_shape(n1,n2)])
 
             for gem in self.encoding.gemini_coords:
                 r1,c1,r2,c2 = gem
