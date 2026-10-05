@@ -179,7 +179,7 @@ puzzle_data = {
 
     ...
 
-    shape_bank:['Q2', 'Q3', 'Qstair', 'Qloop'],
+    'shape_bank':['Q2', 'Q3', 'Qstair', 'Qloop'],
 
     ...
 
@@ -193,7 +193,7 @@ For precision, minimum, and maximum, enter the numerical value or `False` if unu
 At this point you know everything necessary to start using the solver. More examples and a template are provided in the `Examples` folder. While the solver is pretty efficient at most puzzles there are some rule combinations that are particularly tricky. In some cases you may be able to provide the solver with more information to help it work through the puzzle faster. This is completely optional but can make a big difference!
 
 ### About Upper Bounds
-Two big factors that influence difficulty are the number of regions in a puzzle and the area of the biggest region. By default the solver assumes the worst-case scenario in every puzzle. The worst-case number of regions is if every region is a 1x1 cell, then the number of regions is the total area. The worst-case region area is when there is only a single region, then the region area is the total area. Thus the value  `puzzle_data['optimizations']['num regions upper bound']` is initialized to the total area. If the actual number of regions is much lower than this bound the solver wastes significant time exploring what ultimately ends up as empty regions. This value and the `area_upper_bound` are printed to the screen every time the solver runs. If you can come up with a more optimal bound you should specify it! An easy way of finding better bounds is shown in the worked example at the end of this README. **Note an area upper bound is precisely what the maximum mechanic is. Specify area bounds in `puzzle_data['global rules']['maximum']` and num region bounds in `puzzle_data['optimizations']['num regions upper bound']`.**
+Two big factors that influence difficulty are the number of regions in a puzzle and the area of the biggest region. By default the solver assumes the worst-case scenario in every puzzle. The worst-case number of regions is if every region is a 1x1 cell, then the number of regions is the total area. The worst-case region area is when there is only a single region, then the region area is the total area. Thus the value  `puzzle_data['optimizations']['num regions upper bound']` is initialized to the total area. If the actual number of regions is much lower than this bound the solver wastes significant time exploring what ultimately ends up as empty regions. This value and the `area_upper_bound` are printed to the screen every time the solver runs. If you can come up with a more optimal bound you should specify it!**An area upper bound is precisely what the maximum mechanic is. Specify area bounds in `puzzle_data['global rules']['maximum']` and num region bounds in `puzzle_data['optimizations']['num regions upper bound']`.**
 
 An easy way to come up with better bounds is to identify a few large regions. Suppose we identify $n$ regions $R_1,\dots,R_n$ with areas $A_1,\dots,A_n$. In the worst case, the remaining area $A_{rem}=A_{total}-\sum A_i$ could be all 1x1s, so the maximum number of regions is $n+A_{rem}$. In general the remaining area may merge with one of the identified regions so the maximum region area is $\max(A_i)+A_{rem}$. See the gemini compass puzzle for an example. 
 
