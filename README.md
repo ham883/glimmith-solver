@@ -132,6 +132,9 @@ Each board mechanic is represented as a two or more character string, see the ta
 | `I>`,`I<`,`Iv`,`I^` | Inequality | Inequality starts with `I` followed by `>` (greater than), `<` (less than), `v` (lowercase v), or `^` (caret). |
 | `W1`, `W2`, `W3`, `W4` | Watchtower | Watchtower starts with `W` followed by the number of regions. |
 
+> [!important]
+> Do not mark the perimeter of the puzzle; this is automatically inferred. The symbols `--` and `||` are for marking interior or two-sided edges only.
+
 ### Polyominoes
 Define polyominoes as a key/value pair in `puzzle_data['polyominoes']`. The key is the name of the polyomino and the value is the shape: a two dimensional array of 1s and 0s. Polyomino names must start with `Q` and be at least two characters long. Example:
 ```
@@ -164,7 +167,7 @@ puzzle_data = {
 
 }
 ```
-This is just to define a polyomino. Make sure to include it in `puzzle_data['board']`, `puzzle_data['shape bank']`, or `puzzle_data['optimizations']['soft bank']` depending on the puzzle. 
+This is just to define a polyomino. Make sure to include it in `puzzle_data['board']`, `puzzle_data['shape bank']`, or `puzzle_data['optimizations']['soft bank']` depending on the puzzle. Soft banks are discussed at the end of this README. 
 
 ### Polyomino Shortcuts
 You can quickly add the tetrominoes and pentominoes to a shape or soft bank via these shortcuts. You can probably ignore this for most puzzles but sometimes it is convenient for optimizations. 
@@ -187,35 +190,22 @@ puzzle_data = {
 For precision, minimum, and maximum, enter the numerical value or `False` if unused. Use `True` and `False` for all other rules.
 
 ## Optimizations
-At this point you know everything necessary to start using the solver. See WHERE........................................ if you want to go through more examples. While the solver is pretty efficient at most puzzles there are some rule combinations that are particularly tricky. In some cases you may be able to provide the solver with more information to help it work through the puzzle faster. This is completely optional but can make a big difference!
-
-### Approximate Ranking of Rule Difficulty
-Some rules are easier for the solver than others. On a scale of 1 (easiest) to 10 (hardest), they are approximately:
-
-1. Anything involving shape bank, boxy, precision <= 6, maximum <= 6
-2. Precision >= 7, solitude, rose windows
-3. Minimum, maximum >= 7
-4. Loopy, bricky, watchtower, palisade, polyomino
-5. Area number, difference, compass
-6. Inequality, non-boxy, size separation, match
-7.
-8. Gemini, delta, mingle shape (without shape bank)
-9.
-10. Mismatch (without shape bank)
+At this point you know everything necessary to start using the solver. More examples and a template are provided in the `Examples` folder. While the solver is pretty efficient at most puzzles there are some rule combinations that are particularly tricky. In some cases you may be able to provide the solver with more information to help it work through the puzzle faster. This is completely optional but can make a big difference!
 
 ### About Upper Bounds
-Other factors that influences difficulty are the number of regions in a puzzle and the area of the biggest region. By default the solver assumes the worst-case scenario in every puzzle. The worst-case number of regions is if every region is a 1x1 cell, then the number of regions is the total area. The worst-case region area is when there is only a single region, then the region area is the total area. Thus the value  `puzzle_data['optimizations']['num regions upper bound']` is initialized to the total area. If the actual number of regions is much lower than this bound the solver wastes significant time exploring what ultimately ends up as empty regions. This value and the `area_upper_bound` are printed to the screen every time the solver runs. If you can come up with a more optimal bound you should specify it! An easy way of finding better bounds is shown in the worked example at the end of this README. **Note an area upper bound is precisely what the maximum mechanic is. Specify area bounds in `puzzle_data['global rules']['maximum']` and num region bounds in `puzzle_data['optimizations']['num regions upper bound']`.**
+Two big factors that influence difficulty are the number of regions in a puzzle and the area of the biggest region. By default the solver assumes the worst-case scenario in every puzzle. The worst-case number of regions is if every region is a 1x1 cell, then the number of regions is the total area. The worst-case region area is when there is only a single region, then the region area is the total area. Thus the value  `puzzle_data['optimizations']['num regions upper bound']` is initialized to the total area. If the actual number of regions is much lower than this bound the solver wastes significant time exploring what ultimately ends up as empty regions. This value and the `area_upper_bound` are printed to the screen every time the solver runs. If you can come up with a more optimal bound you should specify it! An easy way of finding better bounds is shown in the worked example at the end of this README. **Note an area upper bound is precisely what the maximum mechanic is. Specify area bounds in `puzzle_data['global rules']['maximum']` and num region bounds in `puzzle_data['optimizations']['num regions upper bound']`.**
+
+An easy way to come up with better bounds is to identify a few large regions. Suppose we identify $n$ regions $R_1,\dots,R_n$ with areas $A_1,\dots,A_n$. In the worst case, the remaining area $A_{rem}=A_{total}-\sum A_i$ could be all 1x1s, so the maximum number of regions is $n+A_{rem}$. In general the remaining area may merge with one of the identified regions so the maximum region area is $\max(A_i)+A_{rem}$. See the gemini compass puzzle for an example. 
 
 ### Two colorability
 If a puzzle is known to be two colorable you can tell the solver that, which may make it easier to solve. This value is automatically set if the puzzle uses loopy or if there are exactly two regions. Some situations where you might manually set this are range(x,x+1) with size separation, puzzles with `W2` at every interior vertex, or maybe shape bank with mingle shape/size separation. 
 
 ### Soft Banks
-Mismatch sucks. When paired with a shape bank it is one of the easiest rules. When used without one it is by far the hardest. You should **always** try to use a shape bank with mismatch but sometimes that isn't possible. A soft bank is intended to be a middle ground between having a shape bank and not having one. 
+Mismatch is the hardest rule for the solver and soft banks are designed to help. Testing if two regions have the same shape is very difficult in general but is made much easier with a shape bank or soft bank. When we have either bank the solver tests if two regions have the same shape via bank indices rather than comparing shapes directly. For this reason we should **always try to use a bank with mismatch**. In puzzles like loopy + mismatch it is not possible to use a shape bank since we don't know the shape of the "background" region but we might be able to use a soft bank. 
 
-> A soft bank is a shape bank that allows a one-region exception. Cells may or may not be part of the soft bank. If two cells aren't part of the bank then they are in the same region.
+**Definition: A soft bank is a shape bank that allows a one-region exception. If two cells don't belong to the soft bank then they belong to the same region.**
 
-Soft banks are primarily intended to be used in the situation where a puzzle uses mismatch and cannot have a shape bank, for example loopy + mismatch. See the EXAMPLE 1 and EXAMPLE 2 ..................................
+Using either bank allows the solver to efficiently work through the puzzle. Two examples of using soft banks are provided in `Examples`. 
 
-## Worked Example Finding Upper Bounds
-todo.....................................................................
-An excellent example to talk about the usefulness of specifying num_regions_upper_bound is the size_sep_area_num_big puzzle. Solve times drop from 4 min to 1.7 seconds
+## Disclaimer
+This project is a work in progress. Please report any issues or bugs you come across. This is an unofficial fan-made project and is not affiliated with the developers of the game. 
