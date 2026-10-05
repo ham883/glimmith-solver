@@ -121,12 +121,12 @@ Each board mechanic is represented as a two or more character string, see the ta
 | :----: | :------: | ---------- |
 | `..` | n/a | Empty space. This could be a cell, edge, or vertex. |
 | `##` | n/a | A cell with no mechanics. |
-| `--`, `\|\|` | Given Edge | **This symbol should only be used between two cells. Do not mark the boundary of the puzzle, that is calculated automatically.** Either symbol can be used interchangeably; the difference between horizontal and vertical edges is purely visual. |
+| `--`, `\|\|` | Given Edge | An edge in the interior of the puzzle. Either symbol can be used interchangeably; the difference between horizontal and vertical edges is purely visual. |
 | `A{number}` | Area Number | Area numbers are prefixed with A and followed by the number. Examples: `A1`, `A2`, `A30` |
 | `Rr`, `Rb`, `Ry`, `Rg`, `Rp` | Rose Windows | Rose windows are prefixed with R followed by the first letter of their color (in lowercase): red, blue, yellow, green, or purple. |
 | `P0`, `P1`, `P^`, `P=`, `P3`, `P4` | Palisade | Palisades are prefixed with P followed by the number of edges shown in the clue. P2 is ambiguous; use `P^` or `P=`. |
 | `Q{name}` | Polyomino | Polyominoes must start with `Q` then be followed by their name. You need to name the polyomino and define its shape in `puzzle_data['polyominoes']`. |
-| `Cn1` | Compass | Compasses start with `C` and are followed by `n`, `e`, `s`, or `w` with the number of cells. If a direction of the compass is blank the corresponding letter is omitted. Examples: `Cn1e2s3w4` means north 1, east 2, south 3, west 4. `Cn1s0` means north 1, south 0, east/west unspecified. `C` means a fully blank compass. |
+| `C{directions}` | Compass | Compasses start with `C` and are followed by `n`, `e`, `s`, or `w` with the number of cells. If a direction of the compass is blank the corresponding letter is omitted. Examples: `Cn1e2s3w4` means north 1, east 2, south 3, west 4. `Cn1s0` means north 1, south 0, east/west unspecified. `C` means a fully blank compass. |
 | `Ge`, `De` | Gemini and Delta | Gemini is `Ge`, Delta is `De`. |
 | `D{number}` | Difference | Differences start with `D` followed by the number |
 | `I>`,`I<`,`Iv`,`I^` | Inequality | Inequality starts with `I` followed by `>` (greater than), `<` (less than), `v` (lowercase v), or `^` (caret). |
