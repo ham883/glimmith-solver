@@ -1,59 +1,18 @@
+# input_mode must be one of
+#   workshop scan
+#   game file
+#   solver format
 
-puzzle_data = {
-    'board':[
-        ['..','..','..','..','..','..','..','..','..','..','..','..','..','..','..','..','..','..','..'],
-        ['..','..','..','##','..','##','..','##','..','..','..','##','..','##','..','##','..','..','..'],
-        ['..','..','..','..','..','..','..','..','..','..','..','..','..','..','..','..','..','..','..'],
-        ['..','##','..','##','..','P^','..','##','..','##','..','##','..','##','..','##','..','##','..'],
-        ['..','..','..','..','..','..','..','..','W1','..','..','..','W2','..','..','..','..','..','..'],
-        ['..','##','..','##','..','##','..','##','..','##','..','##','..','##','..','P3','..','##','..'],
-        ['..','..','..','..','W1','..','..','..','..','..','..','..','..','..','..','..','..','..','..'],
-        ['..','##','..','##','..','##','..','P=','..','##','..','P1','..','##','..','##','..','##','..'],
-        ['..','..','..','..','..','..','..','..','..','..','..','..','..','..','W3','..','..','..','..'],
-        ['..','..','..','##','..','##','..','##','..','..','..','##','..','##','..','##','..','..','..'],
-        ['..','..','..','..','W2','..','..','..','..','..','..','..','..','..','..','..','..','..','..'],
-        ['..','##','..','##','..','##','..','P3','..','##','..','P^','..','##','..','##','..','##','..'],
-        ['..','..','..','..','..','..','..','..','..','..','..','..','..','..','W4','..','..','..','..'],
-        ['..','##','..','P1','..','##','..','##','..','##','..','##','..','##','..','##','..','##','..'],
-        ['..','..','..','..','..','..','W2','..','..','..','W4','..','..','..','..','..','..','..','..'],
-        ['..','##','..','##','..','##','..','##','..','##','..','##','..','P3','..','##','..','##','..'],
-        ['..','..','..','..','..','..','..','..','..','..','..','..','..','..','..','..','..','..','..'],
-        ['..','..','..','##','..','##','..','##','..','..','..','##','..','##','..','##','..','..','..'],
-        ['..','..','..','..','..','..','..','..','..','..','..','..','..','..','..','..','..','..','..'],
-    ],
+input_mode = ""
 
-    'polyominoes':{},
+# If using workshop scan mode, specify the path to the workshop here
+path_to_workshop = r""
 
-    'polyomino shortcuts':{
-        'add tetrominoes to shape bank':False,
-        'add tetrominoes to soft bank':False,
-        'add pentominoes to shape bank':False,
-        'add pentominoes to soft bank':False
-    },
+# If using game file mode, specify the path to the file here
+path_to_game_file = r""
 
-    'shape bank':[],
-
-    'global rules':{
-        'mingle shape':     False,
-        'size separation':  False,
-        'mismatch':         False,
-        'match':            False,
-        'solitude':         False,
-        'boxy':             False,
-        'non-boxy':         False,
-        'bricky':           False,
-        'loopy':            False,
-        'precision':        6,
-        'minimum':          False,
-        'maximum':          False
-    },
-    
-    'optimizations':{
-        'num regions upper bound':False,
-        'two colorable':False,
-        'soft bank':[]
-    }
-}
+# If using solver format mode, put your puzzle data here
+puzzle_data = {}
 
 solver_settings = {
     'max solutions limit':10, # The solver will find this many solutions (if they exist) and then stop. Set this to False to disable the limit. 
@@ -79,6 +38,9 @@ from pysat.solvers import Solver as SATSolver
 import time
 import re
 import math
+from pathlib import Path
+import struct
+import copy
 
 transformation_matrices = [
     [
@@ -187,6 +149,398 @@ polyomino_table = [
     ]
 ]
 
+class WorkshopScanner:
+    def __init__(self, path_to_workshop):
+        self.path = Path(path_to_workshop)
+
+        if not self.path.is_dir():
+            raise ValueError("Workshop directory does not exist")
+
+        self.puzzles = []
+        self.path_to_game_file = None
+
+        self.scan_workshop()
+    
+    def read_string(self, f):
+        length = struct.unpack("<i", f.read(4))[0]
+
+        if length < 0:
+            data = f.read(-length * 2)
+            return data.decode("utf-16-le").rstrip("\x00")
+        else:
+            data = f.read(length)
+            return data.decode("utf-8").rstrip("\x00")
+
+
+    def read_metadata(self, metadata):
+        # The metadata format appears to be:
+        # 20 byte header of binary information, no clue what this is
+        # Name:
+        #   4 bytes specifying length of string then the string itself ending with null terminator
+        # Description:
+        #   same format as name
+        # Author:
+        #   same format as name
+        # More unknown binary data
+        # We're just interested in the 3 strings
+        
+        with open(metadata, "rb") as f:
+            f.seek(20)  # Skip binary header
+
+            name = self.read_string(f)
+            description = self.read_string(f)
+            author = self.read_string(f)
+
+        return name, author
+
+    def scan_workshop(self):
+        num_skipped_files = 0
+        for folder in self.path.iterdir():
+            if not folder.is_dir():
+                continue
+
+            metadata = folder / "metadata"
+            puzzle = folder / "puzzle"
+            if not puzzle.is_file():
+                print(f"Folder {folder.name} does not contain a puzzle")
+                num_skipped_files += 1
+                continue
+
+            try:
+                name, author = self.read_metadata(metadata)
+                self.puzzles.append((name, author, folder))
+            except:
+                print(f"Cannot read {folder.name}")
+                num_skipped_files += 1
+
+        self.puzzles.sort(key=lambda p: p[0].casefold())
+
+        if num_skipped_files == 0:
+            print("All files read successfully")
+        
+
+    def ask_user(self):
+        if len(self.puzzles) == 0:
+            print("No puzzles available")
+            return
+        
+        print("\nAvailable puzzles:")
+        for i in range(len(self.puzzles)):
+            print(f"{i+1}  {self.puzzles[i][0]} by {self.puzzles[i][1]}")
+        
+        while 1:
+            selected = input("\nEnter puzzle to solve (number):")
+            try:
+                selected = int(selected) - 1
+                if selected >= 0 and selected < len(self.puzzles):
+                    break
+                else:
+                    print("Invalid input")
+            except:
+                print("Invalid input")
+
+        self.path_to_game_file = self.puzzles[selected][2] / "puzzle"
+
+def ask_for_bounds():
+    print("\nGive a value for these bounds or press enter to skip")
+    max_regions = input("num_regions_upper_bound:")
+    max_area = input("area_upper_bound:")
+    
+    try:
+        max_regions = int(max_regions)
+    except:
+        max_regions = 0
+
+    try:
+        max_area = int(max_area)
+    except:
+        max_area = 0
+
+    return max_regions, max_area
+
+def convert_format(path_to_game_file):
+    str_digits = ['0','1','2','3','4','5','6','7','8','9']
+    
+    def read_compass_num(game_row, j):
+        num = ''
+        if game_row[j+1] in str_digits:
+            num += game_row[j+1]
+            if game_row[j+2] in str_digits:
+                num += game_row[j+2]
+                j += 1
+                                    
+            j += 1
+
+        j += 1 # at the R
+
+        return num, j
+    
+        
+    puzzle_data = {
+        'board':[],
+        'polyominoes':{},
+        'polyomino shortcuts':{
+            'add tetrominoes to shape bank':False,
+            'add tetrominoes to soft bank':False,
+            'add pentominoes to shape bank':False,
+            'add pentominoes to soft bank':False
+        },
+        'shape bank':[],
+        'global rules':{
+            'mingle shape':     False,
+            'size separation':  False,
+            'mismatch':         False,
+            'match':            False,
+            'solitude':         False,
+            'boxy':             False,
+            'non-boxy':         False,
+            'bricky':           False,
+            'loopy':            False,
+            'precision':        False,
+            'minimum':          False,
+            'maximum':          False
+        },
+        'optimizations':{
+            'num regions upper bound':False,
+            'two colorable':False,
+            'soft bank':[]
+        }
+    }
+
+    with path_to_game_file.open() as f:
+        version = f.readline().rstrip("\r\n")
+        if version != "VERSION 1":
+            raise ValueError(f"Cannot convert {path_to_game_file}, unsupported version")
+
+        while 1:
+            current = f.readline().rstrip("\r\n")
+
+            if not current:
+                raise ValueError("Game file has no PUZZLE marker")
+            
+            if current[:11] == "AREA_EQUALS":
+                puzzle_data['global rules']['precision'] = int(current[12:])
+
+            if current[:13] == "AREA_AT_LEAST":
+                puzzle_data['global rules']['minimum'] = int(current[14:])
+
+            if current[:12] == "AREA_AT_MOST":
+                puzzle_data['global rules']['maximum'] = int(current[13:])
+
+            if current[:10] == "SHAPE_BANK":
+                puzzle_data['shape bank'] = ['Q' + num for num in current[11:].split(' ')]
+            
+            elif current[:5] == "SHAPE":
+                shape_num, shape_num_rows = current[6:].split(' ')
+                shape_name = 'Q' + shape_num
+                shape_data = []
+                symbols = {' ':0, '#':1}
+                for _ in range(int(shape_num_rows)):
+                    row = [symbols[char] for char in f.readline().rstrip("\r\n")]
+                    shape_data.append(row)
+                puzzle_data['polyominoes'][shape_name] = shape_data
+
+            if current[:10] == "DIMENSIONS":
+                num_cols, num_rows = [int(num) for num in current[11:].split(' ')]
+                
+            match current:
+                case "ADJACENT_SHAPES_DIFFERENT":
+                    puzzle_data['global rules']['mingle shape'] = True
+
+                case "ADJACENT_SIZES_DIFFERENT":
+                    puzzle_data['global rules']['size separation'] = True
+                    
+                case "ALL_SHAPES_DIFFERENT":
+                    puzzle_data['global rules']['mismatch'] = True
+                    
+                case "ALL_SHAPES_SAME":
+                    puzzle_data['global rules']['match'] = True
+                    
+                case "ONE_SYMBOL_PER_REGION":
+                    puzzle_data['global rules']['solitude'] = True
+                    
+                case "ONLY_RECTANGLES":
+                    puzzle_data['global rules']['boxy'] = True
+                    
+                case "NO_RECTANGLES":
+                    puzzle_data['global rules']['non-boxy'] = True
+                    
+                case "NO_4_WAY_INTERSECTIONS":
+                    puzzle_data['global rules']['bricky'] = True
+                    
+                case "NO_3_WAY_INTERSECTIONS":
+                    puzzle_data['global rules']['loopy'] = True
+
+                case "PUZZLE":
+                    break
+        
+        # We escape the above while loop when we see the PUZZLE line, so the board immediately follows and afterwards we're done
+
+        h_edge_conversion = {
+            '  ':'..',
+            '--':'..',
+            '##':'--',
+            '==':'Ge',
+            '!!':'De',
+            '^^':'I^',
+            'vv':'Iv',
+            '-0':'D0',
+            '-1':'D1',
+            '-2':'D2',
+            '-3':'D3',
+            '-4':'D4',
+            '-5':'D5',
+            '-6':'D6',
+            '-7':'D7',
+            '-8':'D8',
+            '-9':'D9',
+        }
+
+        v_edge_conversion = {
+            ' ':'..',
+            '|':'..',
+            '#':'||',
+            '=':'Ge',
+            '!':'De',
+            '>':'I>',
+            '<':'I<',
+            '0':'D0',
+            '1':'D1',
+            '2':'D2',
+            '3':'D3',
+            '4':'D4',
+            '5':'D5',
+            '6':'D6',
+            '7':'D7',
+            '8':'D8',
+            '9':'D9',
+        }
+
+        vertex_conversion = {
+            ' ':'..',
+            '+':'..',
+            '1':'W1',
+            '2':'W2',
+            '3':'W3',
+            '4':'W4'
+        }
+
+        # Cell table does not include polyominoes, compasses, or area number, which are respectively
+        # S{num} -> Q{num}
+        # U... -> C...
+        # {num} -> A{num}
+        cell_conversion = {
+            '  ':'..',
+            '..':'##',
+            'P1':'Rr',
+            'P2':'Rb',
+            'P3':'Ry',
+            'P4':'Rg',
+            'P5':'Rp',
+            'F0':'P0',
+            'F1':'P1',
+            'F2':'P=',
+            'F3':'P3',
+            'F4':'P4',
+            'F7':'P^'
+        }
+
+        for i in range(2*num_rows + 1):
+            puzzle_data_row = ['..']*(2*num_cols+1)   
+            game_row = f.readline().rstrip("\r\n")
+            
+            token_counter = 0
+            if i % 2 == 0:
+                # Vertices and horizontal edges
+                for j in range(len(game_row)):
+                    if j % 3 == 0:
+                        puzzle_data_row[token_counter] = vertex_conversion[game_row[j]]
+                        token_counter += 1
+
+                    elif j % 3 == 1:
+                       game_symbol = game_row[j:j+2]
+                       puzzle_data_row[token_counter] = h_edge_conversion[game_symbol]
+                       token_counter += 1
+
+            else:
+                # Cells and vertical edges
+                j = 0
+                while j < len(game_row):
+                    if token_counter % 2 == 0:
+                        # Vertical edge. All v edges are one character long
+                        puzzle_data_row[token_counter] = v_edge_conversion[game_row[j]]
+                        token_counter += 1
+                        j += 1
+                    else:
+                        # Cell
+                        if game_row[j] == 'U':
+                            # Compass
+                            north, j = read_compass_num(game_row, j)
+                            south, j = read_compass_num(game_row, j)
+                            west, j = read_compass_num(game_row, j)
+                            east, j = read_compass_num(game_row, j)
+
+                            if game_row[j] == '-':
+                                # If the compass's east value is specified and a difference clue is immediately to the right it would create an ambiguity
+                                # For example UDLR69 could mean 69 right or 6 right with an adjacent difference of 9
+                                # The game prevents this by placing - between the compass and difference, but only if the difference is present
+                                # The difference will be processed in the next loop and we don't need to do anything with the - here
+                                # This also occurs with polyominoes but not with area numbers (since area numbers are always exactly two characters)
+                                j += 1
+
+                            my_compass = 'C'
+                            if len(north) > 0:
+                                my_compass += 'n' + north
+                            if len(south) > 0:
+                                my_compass += 's' + south
+                            if len(west) > 0:
+                                my_compass += 'w' + west
+                            if len(east) > 0:
+                                my_compass += 'e' + east
+
+                            puzzle_data_row[token_counter] = my_compass
+                            token_counter += 1
+
+                            
+                        elif game_row[j] == 'S':
+                            # Polyomino, can be a one or two digit number only
+                            num = game_row[j+1]
+                            if game_row[j+2] in str_digits:
+                                num += game_row[j+2]
+                                if game_row[j+3] == '-':
+                                    j += 1
+
+                            elif game_row[j+2] == '-':
+                                j += 1
+
+                            j += 1
+                            
+                            puzzle_data_row[token_counter] = 'Q' + num
+                            token_counter += 1
+                            j += len(num)
+
+                        elif game_row[j] in str_digits:
+                            # Area number, exactly two characters
+                            # The game does not use - between area numbers and differences since area numbers are always exactly two digits
+                            num = game_row[j:j+2]
+                            if num[0] == '0':
+                                num = num[1]
+                                
+                            puzzle_data_row[token_counter] = 'A' + num
+                            token_counter += 1
+                            j += 2
+
+                        else:
+                            # Everything else is exactly two characters
+                            game_symbol = game_row[j:j+2]
+                            puzzle_data_row[token_counter] = cell_conversion[game_symbol]
+                            token_counter += 1
+                            j += 2
+
+            puzzle_data['board'].append(puzzle_data_row)
+                    
+    
+    return puzzle_data
 
 class BadPuzzleError(Exception):
     pass
@@ -305,7 +659,7 @@ def get_divisors(n):
     return divisors
 
 class PuzzleEncoding():
-    def __init__(self, puzzle_data, verbose):
+    def __init__(self, puzzle_data, verbose, disable_warnings=False):
         self.board = puzzle_data['board']
         self.polyominoes = puzzle_data['polyominoes']
         self.polyomino_shortcuts = puzzle_data['polyomino shortcuts']
@@ -314,6 +668,7 @@ class PuzzleEncoding():
         self.soft_bank_names = puzzle_data['optimizations']['soft bank']
         self.soft_bank_data = []
         self.verbose = verbose
+        self.disable_warnings = disable_warnings
         self.global_rules = puzzle_data['global rules']
         self.optimizations = puzzle_data['optimizations']
         self.num_regions_upper_bound = puzzle_data['optimizations']['num regions upper bound']
@@ -340,7 +695,8 @@ class PuzzleEncoding():
         self.auto_fill_shape_bank()
         self.calc_upper_bounds()
 
-        self.print_warnings()
+        if not self.disable_warnings:
+            self.print_warnings()
 
         if self.verbose:
             print("Building CNF...")
@@ -367,7 +723,7 @@ class PuzzleEncoding():
             print("RAM usage and solve times can be reduced by adding a shape or soft bank if possible.")
             print()
 
-        if self.num_regions_upper_bound >= 60 or self.area_upper_bound >= 90:
+        if self.num_regions_upper_bound * self.area_upper_bound > 4000:
             print()
             print("Warning!")
             print("Solver may use significant RAM. Ensure your system has enough available.")
@@ -944,30 +1300,33 @@ class PuzzleEncoding():
     def get_cells_mapped(self, r1, c1, n1, r2, c2, n2):
         if (r1,c1) > (r2,c2):
             r1,c1,n1,r2,c2,n2 = r2,c2,n2,r1,c1,n1
-            
+
+        # Check if variable already exists
         name = f"cells_mapped_{r1}_{c1}_{n1}_{r2}_{c2}_{n2}"
         if name in self.vpool.obj2id:
             return {'var':self.vpool.id(name), 'clauses':[]}
 
+        # If variable does not exist then check if one of the cells are out of bounds. No need to create a new variable if so
+        if not self.is_a_cell(r1,c1):
+            return {'var':-self.cell_in_region(r2,c2,n2), 'clauses':[]}
+
+        if not self.is_a_cell(r2,c2):
+            return {'var':-self.cell_in_region(r1,c1,n1), 'clauses':[]}
+
+        # At this point both cells are in bounds and the variable doesn't exist. We need to make one.
         clauses = []
         mapped = self.vpool.id(name)
 
-        first = self.FALSE
-        if self.is_a_cell(r1, c1):
-            first = self.cell_in_region(r1,c1,n1)
-
-        second = self.FALSE
-        if self.is_a_cell(r2, c2):
-            second = self.cell_in_region(r2,c2,n2)
-            
-        # mapped represents whether or not the two input cells are part of their corresponding regions
-        # mapped <=> [first <=> second]
+        first = self.cell_in_region(r1,c1,n1)
+        second = self.cell_in_region(r2,c2,n2)
+        
         clauses.append([-mapped, -first, second])
         clauses.append([-mapped, first, -second])
         clauses.append([mapped, -first, -second])
         clauses.append([mapped, first, second])
 
         return {'var':mapped, 'clauses':clauses}
+
 
     def define_same_shape(self, n1, n2):
         R = self.R
@@ -1014,9 +1373,10 @@ class PuzzleEncoding():
                                 clauses.append(cls)
 
                         map_var = mapping['var']
-                        mapped_vars.append(map_var)
-                        # rigid_transformation(t,dr,dc,n1,n2) -> mapped_vars[0] and mapped_vars[1] and ...
-                        clauses.append([-self.rigid_transformation(t,dr,dc,n1,n2), map_var])
+                        if map_var not in mapped_vars:
+                            mapped_vars.append(map_var)
+                            # rigid_transformation(t,dr,dc,n1,n2) -> mapped_vars[0] and mapped_vars[1] and ...
+                            clauses.append([-self.rigid_transformation(t,dr,dc,n1,n2), map_var])
 
                             
                         # Do the mapping in the reverse direction too
@@ -1029,9 +1389,10 @@ class PuzzleEncoding():
                                 clauses.append(cls)
 
                         pre_map_var = pre_mapping['var']
-                        mapped_vars.append(pre_map_var)
-                        # rigid_transformation(t,dr,dc,n1,n2) -> mapped_vars[0] and mapped_vars[1] and ...
-                        clauses.append([-self.rigid_transformation(t,dr,dc,n1,n2), pre_map_var])
+                        if pre_map_var not in mapped_vars:
+                            mapped_vars.append(pre_map_var)
+                            # rigid_transformation(t,dr,dc,n1,n2) -> mapped_vars[0] and mapped_vars[1] and ...
+                            clauses.append([-self.rigid_transformation(t,dr,dc,n1,n2), pre_map_var])
 
 
                     # rigid_transformation(t,dr,dc,n1,n2) <- mapped_vars[0] and mapped_vars[1] and ...
@@ -1057,7 +1418,6 @@ class PuzzleEncoding():
         # If both regions have area 2 they are the same shape
         # if [area_at_least(n1,2) and -area_at_least(n1,3) and area_at_least(n2,2) and -area_at_least(n2,3)] then same_shape(n1,n2)
         clauses.append([-self.area_at_least(n1,2), self.area_at_least(n1,3), -self.area_at_least(n2,2), self.area_at_least(n2,3), self.same_shape(n1,n2)])
-        
         
         return clauses
     
@@ -1296,7 +1656,29 @@ class PuzzleEncoding():
 
                     self.cnf.append([-A, B])
                     self.cnf.append([A, -B])
-                            
+
+    def add_no_checkerboard_clauses(self):
+        for i in range(2, len(self.board), 2):
+            for j in range(2, len(self.board[0]), 2):
+                diagonal_neighbors = [(-1,-1), (-1,1), (1,1), (1,-1)]
+                nbr_cell_coords = [(), (), (), ()]
+                num_cells = 0
+                for n in range(len(diagonal_neighbors)):
+                    r = (i + diagonal_neighbors[n][0])//2
+                    c = (j + diagonal_neighbors[n][1])//2
+                    if self.is_a_cell(r,c):
+                        nbr_cell_coords[n] = (r,c)
+                        num_cells += 1
+
+                if num_cells == 4:
+                    edge_vars = []
+                    for k in range(4):
+                        first = nbr_cell_coords[k]
+                        second = nbr_cell_coords[(k+1)%4]
+                        if len(first) > 0 and len(second) > 0:
+                            edge_vars.append(self.edge(first[0], first[1], second[0], second[1]))
+
+                    self.cnf.extend(CardEnc.atmost(lits=edge_vars, bound=3, vpool=self.vpool))
 
     def belongs_to_compass(self, r, c, k):
         return self.vpool.id(f"belongs_to_compass_{r}_{c}_{k}")
@@ -1482,7 +1864,7 @@ class PuzzleEncoding():
 
             case '4':
                 # All edges must be on
-                for e in edge_vars:
+                for e in defined_edge_vars:
                     self.cnf.append([e])
 
     def add_watchtower_clauses(self, w):
@@ -1832,6 +2214,9 @@ class PuzzleEncoding():
                 # (-brdr[1]) or (brdr[2] and -brdr[3])
                 self.cnf.append([-brdr[1], brdr[2]])
                 self.cnf.append([-brdr[1], -brdr[3]])
+
+        self.add_no_checkerboard_clauses()
+        self.add_two_colorable_clauses()
                 
     
     def add_global_rule_clauses(self):
@@ -1910,27 +2295,6 @@ class PuzzleEncoding():
                     # if -region_is_empty(n) then same_shape(0,n)
                     self.cnf.append([self.region_is_empty(n), self.same_shape(0,n)])
 
-                # All cells have the same area
-                first = self.cell_coords[0]
-                for r,c in self.cell_coords[1:]:
-                    for a in range(1, self.area_upper_bound+1):
-                        self.cnf.append([-self.cell_area_at_least(r,c,a), self.cell_area_at_least(first[0], first[1], a)])
-                        self.cnf.append([self.cell_area_at_least(r,c,a), -self.cell_area_at_least(first[0], first[1], a)])
-
-                # The area of the shape must divide the total area
-                divisors = get_divisors(self.total_area)
-                aux_vars = []
-                for d in divisors:
-                    aux = self.vpool.id()
-                    aux_vars.append(aux)
-                    
-                    # aux <=> cell_area_at_least(0,0,d) and -cell_area_at_least(0,0,d+1)
-                    self.cnf.append([-aux, self.cell_area_at_least(first[0], first[1], d)])
-                    self.cnf.append([-aux, -self.cell_area_at_least(first[0], first[1], d+1)])
-                    self.cnf.append([-self.cell_area_at_least(first[0], first[1], d), self.cell_area_at_least(first[0], first[1], d+1), aux])
-
-                self.cnf.append(aux_vars)
-
             else:
                 r_first, c_first = self.cell_coords[0]
                 for n in range(1, len(self.cell_coords)):
@@ -1992,7 +2356,7 @@ class PuzzleEncoding():
         
     def build_encoding(self):
         self.add_fundamental_clauses()
-        if self.optimizations['two colorable'] or self.num_regions_upper_bound == 2:
+        if self.optimizations['two colorable']:
             # The two colorable clauses are a weak form of loopy. It is pointless to enforce both loopy and these clauses
             self.add_two_colorable_clauses()
             
@@ -2008,46 +2372,69 @@ class PuzzleEncoding():
 class PuzzleSolver():
     def __init__(self, puzzle_data, solver_settings):
         self.puzzle_data = puzzle_data
+        self.board = self.puzzle_data['board']
         self.global_rules = puzzle_data['global rules']
         self.solver_settings = solver_settings
         self.num_sol_found = 0
         self.verbose = solver_settings['verbose']
-        
-        start_cnf_time = time.time()
-        self.encoding = PuzzleEncoding(puzzle_data, self.verbose)
-        self.cnf_time = round(time.time() - start_cnf_time, 3)
-        self.cumulative_solve_time = 0
-        self.s = SATSolver("Lingeling", bootstrap_with=self.encoding.cnf)
-        self.solutions = []
-        
-        self.blocking_clause = []
-        self.present_edges = []
-        self.region_nums_by_cell = [[-1]*self.encoding.C for _ in range(self.encoding.R)]
-        self.region_cells_by_num = [set() for _ in range(self.encoding.num_regions_upper_bound)]
-        
+
+        self.contains_rose_windows = False
+        self.check_rose_windows()
         self.solve_mode = 'normal'
+        self.cumulative_cnf_time = 0
+        self.cumulative_solve_time = 0
+        self.grand_total_time = 0
+        self.solutions = []
 
-        uses_shape_rules = (puzzle_data['global rules']['mingle shape'] or self.encoding.contains_gemini or self.encoding.contains_delta or puzzle_data['global rules']['mismatch'])    
-        if uses_shape_rules and len(puzzle_data['shape bank']) == 0 and len(puzzle_data['optimizations']['soft bank']) == 0:
-            self.solve_mode = 'incremental'
-            # Incremental mode is used when the puzzle involves rules about the shape of regions and does not have a shape or soft bank.
-            # In general it is incredibly expensive to enforce that two regions have same or different shapes. 
-            # In incremental mode we only define some of the same_shape variables and leave the rest hanging for performance. The initial output of the solver will almost certainly be wrong. 
-            # We need to verify if the output is actually a solution. If not we don't report it to the user, add more definitions to fix the contradiction, and re-run the solver. 
-            #   Gemini initial: Enforce an edge and both sides having the same area
-            #   Gemini iteration: Check if the two regions are the same shape, if not then define same_shape(n1,n2) for just the two regions n1,n2 touching the gemini clue. 
-            #	
-            #	Delta initial: Enforce just an edge, nothing else
-            #	Delta iteration: Check if the two regions are different shapes, if not then define same_shape(n1,n2) for just the two regions n1,n2 touching the delta clue. 
-            #
-            #	Mingle initial: Define same_shape(n,n+1) for all 0 <= n <= min(20, num_regions_upper_bound). Enforce mechanic over just these pairs
-            #   Mingle iteration: Check every pair of adjacent regions and if two have the same shape define same_shape for that pair and enforce mechanic for them
-            #
-            #	Mismatch initial: Define same_shape for all pairs 0 <= n1,n2 <= min(10, num_regions_upper_bound).
-            #	Mismatch iteration: Compare every possible pair and define same_shape as needed
-            #
-            #   We never use incremental mode for match puzzles
+        contains_num_region_clues = (self.global_rules['solitude'] or self.global_rules['precision'] or self.contains_rose_windows or len(self.puzzle_data['shape bank']) > 0)
+        contains_upper_bounds = (self.global_rules['maximum'] > 0 or self.puzzle_data['optimizations']['num regions upper bound'] > 0)
+        if self.global_rules['match'] and not contains_num_region_clues and not contains_upper_bounds:
+            self.solve_mode = 'match multi encoding'
 
+        else:
+            # normal solve mode
+            start_cnf_time = time.time()
+            self.encoding = PuzzleEncoding(puzzle_data, self.verbose)
+            self.cumulative_cnf_time = round(time.time() - start_cnf_time, 3)
+            
+            self.s = SATSolver("Lingeling", bootstrap_with=self.encoding.cnf)
+        
+            self.blocking_clause = []
+            self.present_edges = []
+            self.region_nums_by_cell = [[-1]*self.encoding.C for _ in range(self.encoding.R)]
+            self.region_cells_by_num = [set() for _ in range(self.encoding.num_regions_upper_bound)]
+
+            uses_shape_rules = (puzzle_data['global rules']['mingle shape'] or self.encoding.contains_gemini or self.encoding.contains_delta or puzzle_data['global rules']['mismatch'])    
+            if uses_shape_rules and len(puzzle_data['shape bank']) == 0 and len(puzzle_data['optimizations']['soft bank']) == 0 and self.solve_mode != 'match multi encoding':
+                self.solve_mode = 'incremental'
+                # Incremental mode is used when the puzzle involves rules about the shape of regions and does not have a shape or soft bank.
+                # In general it is incredibly expensive to enforce that two regions have same or different shapes. 
+                # In incremental mode we only define some of the same_shape variables and leave the rest hanging for performance. The initial output of the solver will almost certainly be wrong. 
+                # We need to verify if the output is actually a solution. If not we don't report it to the user, add more definitions to fix the contradiction, and re-run the solver. 
+                #   Gemini initial: Enforce an edge and both sides having the same area
+                #   Gemini iteration: Check if the two regions are the same shape, if not then define same_shape(n1,n2) for just the two regions n1,n2 touching the gemini clue. 
+                #	
+                #	Delta initial: Enforce just an edge, nothing else
+                #	Delta iteration: Check if the two regions are different shapes, if not then define same_shape(n1,n2) for just the two regions n1,n2 touching the delta clue. 
+                #
+                #	Mingle initial: Define same_shape(n,n+1) for all 0 <= n <= min(20, num_regions_upper_bound). Enforce mechanic over just these pairs
+                #   Mingle iteration: Check every pair of adjacent regions and if two have the same shape define same_shape for that pair and enforce mechanic for them
+                #
+                #	Mismatch initial: Define same_shape for all pairs 0 <= n1,n2 <= min(10, num_regions_upper_bound).
+                #	Mismatch iteration: Compare every possible pair and define same_shape as needed
+                #
+                #   We never use incremental mode for match puzzles
+
+    def check_rose_windows(self):
+        for i in range(1, len(self.puzzle_data['board']), 2):
+            for j in range(1, len(self.puzzle_data['board'][0]), 2):
+                if self.puzzle_data['board'][i][j] == 'Rr':
+                    self.contains_rose_windows = True
+                    break
+
+            if self.contains_rose_windows:
+                break
+    
     def pretty_print_solution(self):
         puzzle = self.puzzle_data['board']
         edges = self.present_edges
@@ -2222,8 +2609,116 @@ class PuzzleSolver():
                 dy = abs(coords[1] - coords[3])
                 if i < 0 and dx + dy <= 1:
                     self.present_edges.append("edge_" + name[21:])
-                        
+
+            #if name != None:
+            #    print(name, i>0)
+
     def solve(self):
+        if self.solve_mode == 'match multi encoding':
+            return self.solve_match_multi_encoding()
+
+        else:
+            return self.solve_single_encoding()
+
+    def solve_match_multi_encoding(self):
+        total_area = sum([1 for i in range(1, len(self.board), 2) for j in range(1, len(self.board[0]), 2) if self.board[i][j] != '..'])
+        divs = get_divisors(total_area)
+
+        if self.verbose:
+            #print(f"\nStarting solve... ({self.encoding.cnf.nv} variables and {len(self.encoding.cnf.clauses)} clauses)\n")
+            print(f"\nStarting solve...\n")
+        
+        for d in divs:
+            if d < self.global_rules['minimum'] or (d > self.global_rules['maximum'] and self.global_rules['maximum'] > 0):
+                continue
+            
+            if self.verbose:
+                print(f"Checking regions = {total_area//d}, area = {d}")
+
+            case_puzzle = copy.deepcopy(self.puzzle_data)
+            case_puzzle['global rules']['precision'] = d
+                
+            start_cnf_time = time.time()
+            self.encoding = PuzzleEncoding(case_puzzle, False, disable_warnings=True)
+            self.cumulative_cnf_time += round(time.time() - start_cnf_time, 3)
+
+            self.s = SATSolver("Lingeling", bootstrap_with=self.encoding.cnf)
+                
+            time_since_last_valid_solution = time.time()
+
+            stop_solving_early = False
+            while 1:
+                # Clear helper variables from the previous loop
+                self.blocking_clause = []
+                self.present_edges = []
+                self.region_nums_by_cell = [[-1]*self.encoding.C for _ in range(self.encoding.R)]
+                self.region_cells_by_num = [set() for _ in range(self.encoding.num_regions_upper_bound)]
+                
+                start_solve_time = time.time()
+                result = self.s.solve()
+                
+                if not result:
+                    self.cumulative_solve_time += time.time() - start_solve_time
+                    break
+
+                self.reconstruct_solution()
+                self.s.add_clause(self.blocking_clause)
+                
+                end_solve_time = time.time()
+                solve_time = end_solve_time - start_solve_time
+                self.cumulative_solve_time += solve_time
+                
+                self.num_sol_found += 1
+                self.solutions.append(self.region_nums_by_cell)
+
+                if self.verbose:
+                    print(f"\nSolution {self.num_sol_found} ({round(end_solve_time - time_since_last_valid_solution,3)} seconds)")
+
+                if self.solver_settings['show solution']:
+                    self.output_solution()
+
+                if self.num_sol_found == self.solver_settings['max solutions limit']:
+                    stop_solving_early = True
+                    if self.verbose:
+                        print("\nReached maximum solution count; stopping solve now.")
+
+                    break
+                else:
+                    if self.verbose:
+                        print("\nSearching for more solutions...\n\n")
+                            
+
+                time_since_last_valid_solution = time.time()
+
+            del self.encoding
+            del self.s
+            
+            if stop_solving_early:
+                break
+
+
+        if self.verbose and not stop_solving_early:
+            if self.num_sol_found == 0:
+                print("\nThere are no solutions.\nIf you were expecting any, double check you have entered the puzzle correctly.")
+            elif self.num_sol_found == 1:
+                print("\nFound all solutions. The solution is unique.")
+            else:
+                print(f"\nFound all solutions. There are {self.num_sol_found} solutions.")
+        
+        
+        self.grand_total_time = round(self.cumulative_cnf_time + self.cumulative_solve_time, 3)
+        self.cumulative_cnf_time = round(self.cumulative_cnf_time, 3)
+        self.cumulative_solve_time = round(self.cumulative_solve_time, 3)
+
+        if self.verbose:
+            print(f"\n\nCumulative CNF time: {self.cumulative_cnf_time} seconds")
+            print(f"Cumulative solve time: {self.cumulative_solve_time} seconds")
+            print(f"Grand total time: {self.grand_total_time} seconds")
+            
+        return self.solutions
+
+    
+    def solve_single_encoding(self):
         if self.verbose:
             #print(f"Starting solve... ({self.encoding.cnf.nv} variables and {len(self.encoding.cnf.clauses)} clauses)\n")
             print(f"Starting solve...\n")
@@ -2282,16 +2777,46 @@ class PuzzleSolver():
 
                 time_since_last_valid_solution = time.time()
 
-        self.grand_total_time = round(self.cnf_time + self.cumulative_solve_time, 3)
+        self.grand_total_time = round(self.cumulative_cnf_time + self.cumulative_solve_time, 3)
         self.cumulative_solve_time = round(self.cumulative_solve_time, 3)
 
         if self.verbose:
-            print(f"\n\nCNF time: {self.cnf_time} seconds")
+            print(f"\n\nCNF time: {self.cumulative_cnf_time} seconds")
             print(f"Cumulative solve time: {self.cumulative_solve_time} seconds")
             print(f"Grand total time: {self.grand_total_time} seconds")
 
         return self.solutions
 
 if __name__ == "__main__":
+    match input_mode:
+        case 'workshop scan':
+            scanner = WorkshopScanner(path_to_workshop)
+            scanner.ask_user()
+            puzzle_data = convert_format(scanner.path_to_game_file)
+            
+            max_regions, max_area = ask_for_bounds()
+            if max_regions > 0:
+                puzzle_data['optimizations']['num regions upper bound'] = max_regions
+            if max_area > 0:
+                puzzle_data['global rules']['maximum'] = max_area
+
+        case 'game file':
+            puzzle_data = convert_format(Path(path_to_game_file))
+
+            max_regions, max_area = ask_for_bounds()
+            if max_regions > 0:
+                puzzle_data['optimizations']['num regions upper bound'] = max_regions
+            if max_area > 0:
+                puzzle_data['global rules']['maximum'] = max_area
+
+        case 'solver format':
+            pass
+
+        case '':
+            raise ValueError("Please specify an input mode")
+
+        case _:
+            raise ValueError(f"Unknown input mode {input_mode}")
+            
     solver = PuzzleSolver(puzzle_data, solver_settings)
     solutions = solver.solve()
