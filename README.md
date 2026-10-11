@@ -6,7 +6,43 @@ This project requires Python 3.10 or newer and [PySAT](https://pysathq.github.io
 `pip install python-sat`  
 
 ## Usage
-Enter your puzzle in the `puzzle_data` variable in `solver.py`, then run the program. Example puzzle:
+Download `solver.py` and specify which input mode you want to use. There are three modes: workshop scan (recommended), game file, and solver format. 
+| Mode | Variable Assignments |
+| :---: | --- |
+| Workshop Scan | `input_mode = "workshop scan"` <br> `path_to_workshop = r"C:\Program Files (x86)\Steam\steamapps\workshop\content\4160210"` |
+| One Game-Format File | `input_mode = "game file"` <br> `path_to_game_file = r"C:\some\path\ending\in\puzzle"` |
+| Manual Entry | `input_mode = "solver format"` <br> `puzzle_data = {...}` |
+
+### Workshop Scan Mode
+In this mode the solver will search for puzzles in the folder you specify and you choose from the list which one you want to solve. Example usage:
+```
+All files read successfully
+
+Available puzzles:
+1  1-10 by Sigmit
+2  a pure mess. by [P90] ACEDOG11 『Luna
+3  Alien's Rocks by DiIdoBike
+4  boxy box by small guy
+5  Discount Sashigane by iamnotachuckster
+6  draw the rest of the *** owl by ash
+7  Full adder by GQMP
+8  i love loopy by small guy
+
+Enter puzzle to solve (number):
+```
+You need to put the path to the folder that contains your puzzle in the `path_to_workshop` variable (in `solver.py`). There are two locations puzzles are stored in:
+
+- Puzzles you download from the steam workshop are stored in steam's folders, which depend on where steam is installed. By default this is `C:\Program Files (x86)\Steam\steamapps\workshop\content\4160210`. This path should end in `4160210` (the game's app id). 
+
+- Puzzles you make in the puzzle editor are stored in your own workshop. By default this is `C:\Users\your_name_here\AppData\Local\Geri\Saved\workshop`. 
+
+Files for puzzles in the base game are not exposed. You will need to manually type them in the solvers format, see the [solver format](#solver-format-how-to-express-your-puzzle) section. The solver will ask for optional region and area upper bounds. See [about upper bounds](#about-upper-bounds) for more information. 
+
+### Game File Mode
+If you have the file for a particular puzzle you can skip the workshop scan and give it to the solver directly. Specify the path in the `path_to_game_file` variable. This path should end in `puzzle` (or whatever the file is called). 
+
+### Solver Format Mode
+If you don't have a file for a puzzle you need to type the puzzle in the solver's format. Here's an example:
 ```
 puzzle_data = {
     'board':[
@@ -64,48 +100,9 @@ puzzle_data = {
     }
 }
 ```
-Example output:
-```
+The rest of the readme describes the solver's format in more detail. See `template.py` for the template. More examples are provided in the `Examples` folder.
 
-Using num_regions_upper_bound=12 and area_upper_bound=6
-
-Building CNF...
-Starting solve...
-
-Solution 1 (0.109 seconds)
-    ╔═══════════╗   ╔═══╦═══════╗    
-    ║           ║   ║   ║       ║    
-╔═══╝       ╔═══╩═══╣   ╚═══╗   ╚═══╗
-║           ║       ║       ║       ║
-╠═══════════╣       ╠═══╗   ╚═══╗   ║
-║           ║       ║   ║       ║   ║
-║           ║   ╔═══╝   ║   ╔═══╣   ║
-║           ║   ║       ║   ║   ║   ║
-╚═══╦═══════╣   ╠═══╗   ╚═══╣   ╠═══╝
-    ║       ║   ║   ║       ║   ║    
-╔═══╩═══╗   ╠═══╩═══╩═══╗   ║   ╚═══╗
-║       ║   ║           ║   ║       ║
-║       ║   ╚═══════╗   ╚═══╬═══╗   ║
-║       ║           ║       ║   ║   ║
-║       ╠═══════════╬═══╗   ║   ║   ║
-║       ║           ║   ║   ║   ║   ║
-╚═══╦═══╝       ╔═══╣   ╚═══╝   ╠═══╝
-    ║           ║   ║           ║    
-    ╚═══════════╝   ╚═══════════╝    
-
-Searching for more solutions...
-
-
-Found all solutions. The solution is unique.
-
-
-CNF time: 0.401 seconds
-Cumulative solve time: 0.109 seconds
-Grand total time: 0.51 seconds
-```
-The solver draws the completed puzzle using unicode box drawing characters. This looks best using a fixed-width font. If this is not displayed correctly you can choose to have the solution shown in a simpler way in the `solver_settings` variable. 
-
-## How To Express Your Puzzle
+## Solver Format: How To Express Your Puzzle
 ### Board
 The solver represents puzzles on an expanded cell-edge-vertex grid. This provides room to easily enter edge and vertex mechanics. If the original puzzle has `R` rows and `C` columns, the expanded grid has `2R+1` rows and `2C+1` columns. The image below shows a 2x2 board segment. Cells are colored orange, edges are green, and vertices are purple. The `'##'` symbol means a cell is present and has no mechanics while `'..'` means empty space. 
 
@@ -113,7 +110,7 @@ The solver represents puzzles on an expanded cell-edge-vertex grid. This provide
   <img src="https://github.com/user-attachments/assets/f08eae19-1072-4c36-a0f2-00cc23010d86" alt="Visual depiction of expanded grid."/>
 </p>
 
-Each board mechanic is represented as a two or more character string, see the table below. 
+Each board mechanic is represented as a string token, see the table below. 
 
 ### Table of Symbols
 
@@ -167,10 +164,10 @@ puzzle_data = {
 
 }
 ```
-This is just to define a polyomino. Make sure to include it in `puzzle_data['board']`, `puzzle_data['shape bank']`, or `puzzle_data['optimizations']['soft bank']` depending on the puzzle. Soft banks are discussed at the end of this README. 
+This is just to define a polyomino. Make sure to include the name in `puzzle_data['board']`, `puzzle_data['shape bank']`, or `puzzle_data['optimizations']['soft bank']` depending on the puzzle. Soft banks are discussed at the end of this readme. 
 
 ### Polyomino Shortcuts
-You can quickly add the tetrominoes and pentominoes to a shape or soft bank via these shortcuts. You can probably ignore this for most puzzles but sometimes it is convenient for optimizations. 
+You can quickly add the tetrominoes and pentominoes to a shape or soft bank via these shortcuts. You can probably ignore this for most puzzles but sometimes it is convenient. 
 
 ### Shape Bank
 Enter the names of the polyominoes in the shape bank if your puzzle uses it. Do not enter the actual shape data. Continuing the polyomino example from above:
@@ -179,7 +176,7 @@ puzzle_data = {
 
     ...
 
-    'shape_bank':['Q2', 'Q3', 'Qstair', 'Qloop'],
+    'shape bank':['Q2', 'Q3', 'Qstair', 'Qloop'],
 
     ...
 
@@ -190,12 +187,12 @@ puzzle_data = {
 For precision, minimum, and maximum, enter the numerical value or `False` if unused. Use `True` and `False` for all other rules.
 
 ## Optimizations
-At this point you know everything necessary to start using the solver. More examples and a template are provided in the `Examples` folder. While the solver is pretty efficient at most puzzles there are some rule combinations that are particularly tricky. In some cases you may be able to provide the solver with more information to help it work through the puzzle faster. This is completely optional but can make a big difference!
+At this point you know everything necessary to start using the solver. While the solver is pretty efficient at most puzzles there are some rule combinations that are particularly tricky. In some cases you may be able to provide the solver with more information to help it work through the puzzle faster. This is completely optional but can make a big difference!
 
 ### About Upper Bounds
-Two big factors that influence difficulty are the number of regions in a puzzle and the area of the biggest region. By default the solver assumes the worst-case scenario in every puzzle. The worst-case number of regions is if every region is a 1x1 cell, then the number of regions is the total area. The worst-case region area is when there is only a single region, then the region area is the total area. Thus the value  `puzzle_data['optimizations']['num regions upper bound']` is initialized to the total area. If the actual number of regions is much lower than this bound the solver wastes significant time exploring what ultimately ends up as empty regions. This value and the `area_upper_bound` are printed to the screen every time the solver runs. If you can come up with a more optimal bound you should specify it!**An area upper bound is precisely what the maximum mechanic is. Specify area bounds in `puzzle_data['global rules']['maximum']` and num region bounds in `puzzle_data['optimizations']['num regions upper bound']`.**
+Two big factors that influence difficulty are the number of regions in a puzzle and the area of the biggest region. By default the solver assumes the worst-case scenario in every puzzle. The worst-case number of regions is if every region is a 1x1 cell, then the number of regions is the total area. The worst-case region area is when there is only a single region, then the region area is the total area. Thus the variables `num_regions_upper_bound` and `area_upper_bound` are initialized to the total area. If the actual number of regions is lower than this bound the solver wastes significant time exploring what ultimately end up as empty regions. Large area bounds require a lot of memory and time as well. These values are printed to the screen every time the solver runs. If you can come up with a more optimal bound you should specify it! In workshop scan and game file modes the solver will ask for these values. In the solver's format, specify area bounds in `puzzle_data['global rules']['maximum']` and num region bounds in `puzzle_data['optimizations']['num regions upper bound']`.
 
-An easy way to come up with better bounds is to identify a few large regions. Suppose we identify $n$ regions $R_1,\dots,R_n$ with areas $A_1,\dots,A_n$. In the worst case, the remaining area $A_{rem}=A_{total}-\sum A_i$ could be all 1x1s, so the maximum number of regions is $n+A_{rem}$. In general the remaining area may merge with one of the identified regions so the maximum region area is $\max(A_i)+A_{rem}$. See the gemini compass puzzle for an example. 
+An easy way to come up with better bounds is to identify a few large regions. Suppose we identify $n$ distinct regions $R_1,\dots,R_n$ with areas $A_1,\dots,A_n$. In the worst case, the remaining area $A_{rem}=A_{total}-\sum A_i$ could be all 1x1s, so the maximum number of regions is $n+A_{rem}$. In general the remaining area may merge with one of the identified regions so the maximum region area is $\max(A_i)+A_{rem}$. See the gemini compass example for an application of this. 
 
 ### Two colorability
 If a puzzle is known to be two colorable you can tell the solver that, which may make it easier to solve. This value is automatically set if the puzzle uses loopy or if there are exactly two regions. Some situations where you might manually set this are range(x,x+1) with size separation, puzzles with `W2` at every interior vertex, or maybe shape bank with mingle shape/size separation. 
