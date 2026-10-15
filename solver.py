@@ -14,6 +14,7 @@ path_to_game_file = r""
 # If using solver format mode, put your puzzle data here
 puzzle_data = {}
 
+
 solver_settings = {
     'max solutions limit':10, # The solver will find this many solutions (if they exist) and then stop. Set this to False to disable the limit. 
     'pretty print solution':True, # If True the solver outputs the solution using unicode box drawing characters. If False the solver outputs which region number each cell belongs to. 
@@ -271,7 +272,7 @@ def convert_format(path_to_game_file):
                                     
             j += 1
 
-        j += 1 # at the R
+        j += 1
 
         return num, j
     
@@ -1235,9 +1236,9 @@ class PuzzleEncoding():
         # The starting cell for the reachability
         return self.vpool.id(f"root_{r}_{c}_{n}")
 
-    def reachable(self, r, c, k):
+    def reachable(self, r, c, n, k):
         # True iff the cell at (r,c) is reachable from its corresponding root within k steps 
-        return self.vpool.id(f"reachable_{r}_{c}_{k}")
+        return self.vpool.id(f"reachable_{r}_{c}_{n}_{k}")
     
     def totalizer(self, variables, root_name):
         if len(variables) == 0:
@@ -1426,7 +1427,8 @@ class PuzzleEncoding():
 
         # Every cell needs to be part of exactly one region
         for r,c in self.cell_coords:
-            self.cnf.extend(CardEnc.equals(lits=[self.cell_in_region(r,c,n) for n in range(self.num_regions_upper_bound)], bound=1, vpool=self.vpool))
+            clauses = CardEnc.equals(lits=[self.cell_in_region(r,c,n) for n in range(self.num_regions_upper_bound)], bound=1, vpool=self.vpool)
+            self.cnf.extend(clauses)
 
         # Define the edges
         for r,c in self.cell_coords:
@@ -1456,7 +1458,7 @@ class PuzzleEncoding():
         #       (b) all of its neighbors (in the same region) are reachable at step k+1
         #       (c) it must be adjacent to a cell (in the same region) that was reachable at step k-1, unless it's the root
         # (4) A region is connected iff every cell is reachable at some step
-        
+
         # (1)
         for n in range(self.num_regions_upper_bound):
             all_possible_roots = [self.root(r,c,n) for r,c in self.cell_coords]
@@ -1480,47 +1482,41 @@ class PuzzleEncoding():
         # (2)
         for r,c in self.cell_coords:
             for n in range(self.num_regions_upper_bound):
-                # root(r,c,n) -> reachable(r,c,0)
-                self.cnf.append([-self.root(r,c,n), self.reachable(r,c,0)])
+                # root(r,c,n) -> reachable(r,c,n,0)
+                self.cnf.append([-self.root(r,c,n), self.reachable(r,c,n,0)])
 
-            # if reachable(r,c,0) then [(root(r,c,0) or root(r,c,1) or root(r,c,2) or ...]
-            self.cnf.append([-self.reachable(r,c,0)] + [self.root(r,c,n) for n in range(self.num_regions_upper_bound)])
-
+                # if reachable(r,c,n,0) then [(root(r,c,0) or root(r,c,1) or root(r,c,2) or ...]
+                self.cnf.append([-self.reachable(r,c,n,0)] + [self.root(r,c,n) for n in range(self.num_regions_upper_bound)])
 
         # (3)
         for r,c in self.cell_coords:
-            for k in range(self.area_upper_bound): # k runs from 0 <= k <= area_upper_bound - 1
-                # (a) if reachable(r,c,k) then reachable(r,c,k+1)
-                self.cnf.append([-self.reachable(r,c,k), self.reachable(r,c,k+1)])
-
-                for neighbor in [(-1,0), (0,1), (1,0), (0,-1)]:
-                    r2 = r + neighbor[0]
-                    c2 = c + neighbor[1]
-                    if self.is_a_cell(r2,c2):
-                        for n in range(self.num_regions_upper_bound):
-                            # (b) if [reachable(r,c,k) and cell_in_region(r,c,n) and cell_in_region(r',c',n)] then reachable(r',c',k+1)
-                            self.cnf.append([-self.reachable(r,c,k), -self.cell_in_region(r,c,n), -self.cell_in_region(r2,c2,n), self.reachable(r2,c2,k+1)])  
-                
-                for n in range(self.num_regions_upper_bound):
-                    aux_vars = []
-                    for neighbor in [(-1,0), (0,1), (1,0), (0,-1)]:
-                        r2 = r + neighbor[0]
-                        c2 = c + neighbor[1]
-                        if self.is_a_cell(r2,c2):
-                            aux = self.vpool.id()
-                            aux_vars.append(aux)
-                            # aux <=> cell_in_region(r2,c2,n) and reachable(r2,c2,k)
-                            self.cnf.append([-aux, self.cell_in_region(r2,c2,n)])
-                            self.cnf.append([-aux, self.reachable(r2,c2,k)])
-                            self.cnf.append([-self.cell_in_region(r2,c2,n), -self.reachable(r2,c2,k), aux])
+            neighbors = []
+            for adjacent in [(-1,0), (0,1), (1,0), (0,-1)]:
+                r2 = r + adjacent[0]
+                c2 = c + adjacent[1]
+                if self.is_a_cell(r2,c2):
+                    neighbors.append((r2,c2))
                     
-                    # (c) if [reachable(r,c,k+1) and cell_in_region(r,c,n) and -root(r,c,n)] then [{cell_in_region(r1,c1,n) and reachable(r1,c1,k)} or {cell_in_region(r2,c2,n) and reachable(r2,c2,k)} or ...]
-                    self.cnf.append([-self.reachable(r,c,k+1), -self.cell_in_region(r,c,n), self.root(r,c,n)] + aux_vars)
+            for k in range(self.area_upper_bound):
+                for n in range(self.num_regions_upper_bound):
+                    # if reachable(r,c,n,k) then cell_in_region(r,c,n)
+                    self.cnf.append([-self.reachable(r,c,n,k), self.cell_in_region(r,c,n)])
+                    
+                    # (a) if reachable(r,c,n,k) then reachable(r,c,n,k+1)
+                    self.cnf.append([-self.reachable(r,c,n,k), self.reachable(r,c,n,k+1)])
+                    
+                    # (b) if reachable(r,c,n,k) and cell_in_region(r',c',n) then reachable(r',c',n,k+1)
+                    for nbr in neighbors:
+                        self.cnf.append([-self.reachable(r,c,n,k), -self.cell_in_region(nbr[0], nbr[1], n), self.reachable(nbr[0], nbr[1], n, k+1)])
+                    
+                    # (c) if [reachable(r,c,n,k+1) and -root(r,c,n)] then [ reachable(r2,c2,n,k) or reachable(r3,c3,n,k) or ... ], where the RHS ranges over all neighbors of (r,c)
+                    self.cnf.append([-self.reachable(r,c,n,k+1), self.root(r,c,n)] + [self.reachable(nbr[0], nbr[1], n, k) for nbr in neighbors])
 
         # (4)
+        # if cell_in_region(r,c,n) then [reachable(r,c,n,0) or reachable(r,c,n,1) or ...]
         for r,c in self.cell_coords:
-            self.cnf.append([self.reachable(r,c,k) for k in range(self.area_upper_bound)])
-        
+            for n in range(self.num_regions_upper_bound):
+                self.cnf.append([-self.cell_in_region(r,c,n)] + [self.reachable(r,c,n,k) for k in range(self.area_upper_bound)])        
 
     
     def add_symmetry_breaking_clauses(self):
@@ -2248,13 +2244,8 @@ class PuzzleEncoding():
                             for i in range(len(self.shape_bank_data)):
                                 # if there is an edge then there is no pair of cell_bank_index values where both are true
                                 # if edge(r1,c1,r2,c2) then [-cell_bank_index(r1,c1,0) or -cell_bank_index(r2,c2,0)] and [-cell_bank_index(r1,c1,1) or -cell_bank_index(r2,c2,1)] and ...
-                                # aux <=> -cell_bank_index(r1,c1,i) or -cell_bank_index(r2,c2,i)
-                                aux = self.vpool.id()
-                                self.cnf.append([-aux, -self.cell_bank_index(r1,c1,i), -self.cell_bank_index(r2,c2,i)])
-                                self.cnf.append([self.cell_bank_index(r1,c1,i), aux])
-                                self.cnf.append([self.cell_bank_index(r2,c2,i), aux])
-
-                                self.cnf.append([-self.edge(r1,c1,r2,c2), aux])
+                                
+                                self.cnf.append([-self.edge(r1,c1,r2,c2), -self.cell_bank_index(r1,c1,i), -self.cell_bank_index(r2,c2,i)])
 
         if self.global_rules['mismatch']:
             if len(self.shape_bank_data) == 0 and len(self.soft_bank_data) == 0:
@@ -2610,8 +2601,6 @@ class PuzzleSolver():
                 if i < 0 and dx + dy <= 1:
                     self.present_edges.append("edge_" + name[21:])
 
-            #if name != None:
-            #    print(name, i>0)
 
     def solve(self):
         if self.solve_mode == 'match multi encoding':
