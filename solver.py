@@ -14,7 +14,6 @@ path_to_game_file = r""
 # If using solver format mode, put your puzzle data here
 puzzle_data = {}
 
-
 solver_settings = {
     'max solutions limit':10, # The solver will find this many solutions (if they exist) and then stop. Set this to False to disable the limit. 
     'pretty print solution':True, # If True the solver outputs the solution using unicode box drawing characters. If False the solver outputs which region number each cell belongs to. 
@@ -707,15 +706,6 @@ class PuzzleEncoding():
         self.build_encoding()
 
     def print_warnings(self):
-        # mismatch/mingle without shape/soft bank uses a lot of ram and takes a long time
-        if self.global_rules['mismatch'] and len(self.shape_bank_data) == 0 and len(self.soft_bank_data) == 0:
-            print()
-            print("Warning!")
-            print("Solver may use significant RAM. Ensure your system has enough available.")
-            print("Mismatch without shape bank or soft bank is incredibly difficult.")
-            print("RAM usage and solve times can be reduced by adding a shape or soft bank if possible.")
-            print()
-
         if self.global_rules['mingle shape'] and len(self.shape_bank_data) == 0 and len(self.soft_bank_data) == 0:
             print()
             print("Warning!")
@@ -1565,12 +1555,6 @@ class PuzzleEncoding():
             for m in range(n+1,self.num_regions_upper_bound):
                 self.cnf.append([-self.region_is_empty(n), self.region_is_empty(m)])
 
-    def region_has_area_one(self, n):
-        return self.vpool.id(f"region_has_area_one_{n}")
-
-    def region_has_area_two(self, n):
-        return self.vpool.id(f"region_has_area_two_{n}")
-
     def bank_index_count_at_least(self, i, k):
         return self.bank_index_count_totalizer_roots[i].cnf_vars[k]
     
@@ -1590,19 +1574,6 @@ class PuzzleEncoding():
                     # -cell_in_region(r,c,n) or [(x or -y) and (-x or y)]
                     self.cnf.append([-self.cell_in_region(r,c,n), self.cell_area_at_least(r,c,a), -self.area_at_least(n,a)])
                     self.cnf.append([-self.cell_in_region(r,c,n), -self.cell_area_at_least(r,c,a), self.area_at_least(n,a)])
-
-        # Define region_has_area_one and two
-        # region_has_area_one <=> area_at_least(n,1) and -area_at_least(n,2)
-        for n in range(self.num_regions_upper_bound):
-            self.cnf.append([-self.region_has_area_one(n), self.area_at_least(n,1)])
-            self.cnf.append([-self.region_has_area_one(n), -self.area_at_least(n,2)])
-            self.cnf.append([-self.area_at_least(n,1), self.area_at_least(n,2), self.region_has_area_one(n)])
-
-        # region_has_area_two <=> area_at_least(n,2) and -area_at_least(n,3)
-        for n in range(self.num_regions_upper_bound):
-            self.cnf.append([-self.region_has_area_two(n), self.area_at_least(n,2)])
-            self.cnf.append([-self.region_has_area_two(n), -self.area_at_least(n,3)])
-            self.cnf.append([-self.area_at_least(n,2), self.area_at_least(n,3), self.region_has_area_two(n)])
 
         if self.global_rules['mismatch']:
             if len(self.shape_bank_data) > 0:
@@ -1722,8 +1693,8 @@ class PuzzleEncoding():
         # r,c is the top left corner cell
         # We check if the polyomino is out of bounds and if not then create a cnf variable representing the corresponding edges being on/off
         occupied_cells = [(r+a,c+b) for a in range(len(poly)) for b in range(len(poly[0])) if poly[a][b] == 1]
-
-        if 0 not in [self.is_a_cell(a,b) for a,b in occupied_cells]:
+         
+        if 0 not in [self.is_a_cell(a,b) for a,b in occupied_cells]:                
             base_edge_coords = get_base_edge_coords(poly)
             internal_edges = [coordinate_add(e, (r,c,r,c)) for e in base_edge_coords['internal']]
             perimeter_edges = []
@@ -1734,7 +1705,7 @@ class PuzzleEncoding():
                     perimeter_edges.append((first[0], first[1], second[0], second[1]))
 
             variables = [-self.edge(coord[0], coord[1], coord[2], coord[3]) for coord in internal_edges] + [self.edge(coord[0], coord[1], coord[2], coord[3]) for coord in perimeter_edges]
-
+                
             # placement_var <=> [-internal_1 and -internal_2 and ... and perimeter_1 and perimeter_2 and ...]
             placement_var = self.vpool.id()
             for v in variables:
@@ -2249,22 +2220,19 @@ class PuzzleEncoding():
 
         if self.global_rules['mismatch']:
             if len(self.shape_bank_data) == 0 and len(self.soft_bank_data) == 0:
-                if self.contains_rose_windows or self.global_rules['solitude']:
-                    # Mismatch rose window puzzles usually don't have any other mechanics for the solver to find deductions with resulting in the solver being re-ran many times with no substantial progress being made
-                    # Since we know the exact number of regions we might as well just define all the same_shape pairs immediately
-                    upp = self.num_regions_upper_bound
-                else:
-                    upp = min(10, self.num_regions_upper_bound)
-                    
-                for n1 in range(upp):
-                    for n2 in range(n1+1, upp):
-                        # if -region_is_empty(n1) and -region_is_empty(n2) then -same_shape(n1,n2)
-                        self.cnf.append([self.region_is_empty(n1), self.region_is_empty(n2), -self.same_shape(n1,n2)])
-                        self.cnf.extend(self.define_same_shape(n1,n2))
+                # We enforce at most one of each of the small polyominoes. If any bigger polyominoes violate mismatch they will be caught and fixed in the solver's incremental loop
+                for sizes in polyomino_table:
+                    for poly in sizes:
+                        p_vars = []
+                        for orient in get_orientations(poly):
+                            for r in range(self.R):
+                                for c in range(self.C):
+                                    placement_var = self.make_var_for_polyomino_placement(r,c,orient)
+                                    if placement_var is not None:
+                                        p_vars.append(placement_var['var'])
 
-                # There is at most one area 1 region and at most one area 2 region
-                self.cnf.extend(CardEnc.atmost(lits=[self.region_has_area_one(n) for n in range(self.num_regions_upper_bound)], bound=1, vpool=self.vpool))
-                self.cnf.extend(CardEnc.atmost(lits=[self.region_has_area_two(n) for n in range(self.num_regions_upper_bound)], bound=1, vpool=self.vpool))
+                        self.cnf.extend(CardEnc.atmost(lits=p_vars, bound=1, vpool=self.vpool))
+                
                 
             elif len(self.shape_bank_data) > 0:
                 for i in range(len(self.shape_bank_data)):
@@ -2360,6 +2328,8 @@ class PuzzleEncoding():
         if self.num_regions_upper_bound == 2:
             self.add_two_region_optimization_clauses()
 
+                    
+
 class PuzzleSolver():
     def __init__(self, puzzle_data, solver_settings):
         self.puzzle_data = puzzle_data
@@ -2405,14 +2375,14 @@ class PuzzleSolver():
                 #   Gemini initial: Enforce an edge and both sides having the same area
                 #   Gemini iteration: Check if the two regions are the same shape, if not then define same_shape(n1,n2) for just the two regions n1,n2 touching the gemini clue. 
                 #	
-                #	Delta initial: Enforce just an edge, nothing else
-                #	Delta iteration: Check if the two regions are different shapes, if not then define same_shape(n1,n2) for just the two regions n1,n2 touching the delta clue. 
+                #   Delta initial: Enforce just an edge, nothing else
+                #   Delta iteration: Check if the two regions are different shapes, if not then define same_shape(n1,n2) for just the two regions n1,n2 touching the delta clue. 
                 #
-                #	Mingle initial: Define same_shape(n,n+1) for all 0 <= n <= min(20, num_regions_upper_bound). Enforce mechanic over just these pairs
+                #   Mingle initial: Define same_shape(n,n+1) for all 0 <= n <= min(20, num_regions_upper_bound). Enforce mechanic over just these pairs
                 #   Mingle iteration: Check every pair of adjacent regions and if two have the same shape define same_shape for that pair and enforce mechanic for them
                 #
-                #	Mismatch initial: Define same_shape for all pairs 0 <= n1,n2 <= min(10, num_regions_upper_bound).
-                #	Mismatch iteration: Compare every possible pair and define same_shape as needed
+                #   Mismatch initial: Enforce at most one monomino, domino, I tromino, and L tromino. We haven't defined any same_shape pairs yet
+                #   Mismatch iteration: Compare every possible pair and define same_shape as needed
                 #
                 #   We never use incremental mode for match puzzles
 
@@ -2806,6 +2776,6 @@ if __name__ == "__main__":
 
         case _:
             raise ValueError(f"Unknown input mode {input_mode}")
-            
+        
     solver = PuzzleSolver(puzzle_data, solver_settings)
     solutions = solver.solve()
