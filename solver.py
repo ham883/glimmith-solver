@@ -795,7 +795,8 @@ class PuzzleEncoding():
                 c = j//2
                 r0 = r - (i%2==0)
                 c0 = c - (i%2==1)
-                if symbol[0] not in ['.', '#', '-', '|']:
+                if i%2 == 1 and j%2 == 1 and symbol[0] not in ['.', '#']:
+                    # self.total_num_symbols is only used if the puzzle uses solitude. We need to know the number of cell-based clues. 
                     self.total_num_symbols += 1
                     
                 match symbol[0]:
